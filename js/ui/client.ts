@@ -211,6 +211,24 @@ class ClientEntry {
                 }
             },
             MenuEntry.HR(),
+            /*
+            {
+                type: MenuEntryType.ENTRY,
+                icon: "client-kick_server",
+                name: "Add group to client",
+                invalidPermission: true, //!this.channelTree.client.permissions.neededPermission(PermissionType.I_CLIENT_BAN_MAX_BANTIME).granted(1),
+                callback: () => {
+                    Modals.spawnBanClient(this.properties.client_nickname, (duration, reason) => {
+                        this.channelTree.client.serverConnection.sendCommand("banclient", {
+                            uid: this.properties.client_unique_identifier,
+                            banreason: reason,
+                            time: duration
+                        });
+                    });
+                }
+            },
+            MenuEntry.HR(),
+            */
             {
                 type: MenuEntryType.ENTRY,
                 icon: "client-volume",
@@ -305,10 +323,10 @@ class ClientEntry {
             icon = "client-away";
         } else if(!this.properties.client_output_hardware) {
             icon = "client-hardware_output_muted";
-        } else if(!this.properties.client_input_hardware) {
-            icon = "client-hardware_input_muted";
         } else if(this.properties.client_output_muted) {
             icon = "client-output_muted";
+        } else if(!this.properties.client_input_hardware) {
+            icon = "client-hardware_input_muted";
         } else if(this.properties.client_input_muted) {
             icon = "client-input_muted";
         } else {
@@ -345,6 +363,7 @@ class ClientEntry {
     updateVariables(...variables: {key: string, value: string}[]) {
         let group = log.group(log.LogType.DEBUG, LogCategory.CLIENT, "Update properties (%i) of %s (%i)", variables.length, this.clientNickName(), this.clientId());
 
+        let update_status_icon = false;
         for(let variable of variables) {
             JSON.map_field_to(this._properties, variable.value, variable.key);
 

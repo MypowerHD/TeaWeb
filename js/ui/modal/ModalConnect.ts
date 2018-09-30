@@ -9,7 +9,10 @@ namespace Modals {
                 return header;
             },
             body: function () {
-                let tag = $("#tmpl_connect").renderTag();
+                let tag = $("#tmpl_connect").renderTag({
+                    forum_path: settings.static("forum_path"),
+                    forum_valid: !!forumIdentity
+                });
 
                 let updateFields = function () {
                     if(connectIdentity) tag.find(".connect_nickname").attr("placeholder", connectIdentity.name());
@@ -19,11 +22,13 @@ namespace Modals {
 
                     let field_address = tag.find(".connect_address");
                     let address = field_address.val().toString();
+                    settings.changeGlobal("connect_address", address);
                     let flag_address = !!address.match(Regex.IP_V4) || !!address.match(Regex.DOMAIN);
 
                     let field_nickname = tag.find(".connect_nickname");
                     let nickname = field_nickname.val().toString();
-                    let flag_nickname = nickname.length == 0 || nickname.length >= 3 && nickname.length <= 32;
+                    settings.changeGlobal("connect_name", nickname);
+                    let flag_nickname = (nickname.length == 0 && connectIdentity && connectIdentity.name().length > 0) || nickname.length >= 3 && nickname.length <= 32;
 
                     if(flag_address) {
                         if(field_address.hasClass("invalid_input"))
@@ -48,7 +53,8 @@ namespace Modals {
                     }
                 };
 
-                tag.find(".connect_address").val(defaultHost);
+                tag.find(".connect_nickname").val(settings.static_global("connect_name", undefined));
+                tag.find(".connect_address").val(settings.static_global("connect_address", defaultHost));
                 tag.find(".connect_address").on("keyup", () => updateFields());
                 tag.find(".connect_nickname").on("keyup", () => updateFields());
 
@@ -61,47 +67,67 @@ namespace Modals {
                 tag.find(".identity_select").val(IdentitifyType[def_connect_type ? def_connect_type : settings.global("connect_identity_type", IdentitifyType.TEAFORO)]);
                 setTimeout(() =>  tag.find(".identity_select").trigger('change'), 0); //For some reason could not be run instantly
 
-                tag.find(".identity_file").change(function (this: HTMLInputElement) {
-                    const reader = new FileReader();
-                    reader.onload = function() {
-                        connectIdentity = TSIdentityHelper.loadIdentityFromFileContains(reader.result);
+                {
+                    tag.find(".identity_file").change(function (this: HTMLInputElement) {
+                        const reader = new FileReader();
+                        reader.onload = function() {
+                            connectIdentity = TSIdentityHelper.loadIdentityFromFileContains(reader.result as string);
 
-                        console.log(connectIdentity.uid());
-                        if(!connectIdentity) tag.find(".error_message").text("Could not read identity! " + TSIdentityHelper.last_error());
-                        else {
-                            tag.find(".identity_string").val((connectIdentity as TeamSpeakIdentity).exported());
-                            settings.changeGlobal("connect_identity_teamspeak_identity", (connectIdentity as TeamSpeakIdentity).exported());
+                            console.log(connectIdentity.uid());
+                            if(!connectIdentity) tag.find(".error_message").text("Could not read identity! " + TSIdentityHelper.last_error());
+                            else {
+                                tag.find(".identity_string").val((connectIdentity as TeamSpeakIdentity).exported());
+                                settings.changeGlobal("connect_identity_teamspeak_identity", (connectIdentity as TeamSpeakIdentity).exported());
+                            }
+
+                            (!!connectIdentity ? tag.hide : tag.show).apply(tag.find(".error_message"));
+                            updateFields();
+                        };
+                        reader.onerror = ev => {
+                            tag.find(".error_message").text("Could not read identity file!").show();
+                            updateFields();
+                        };
+                        reader.readAsText(this.files[0]);
+                    });
+
+                    tag.find(".identity_string").on('change', function (this: HTMLInputElement) {
+                        if(this.value.length == 0){
+                            tag.find(".error_message").text("Please select an identity!");
+                            connectIdentity = undefined;
+                        } else {
+                            connectIdentity = TSIdentityHelper.loadIdentity(this.value);
+                            if(!connectIdentity) tag.find(".error_message").text("Could not parse identity! " + TSIdentityHelper.last_error());
+                            else settings.changeGlobal("connect_identity_teamspeak_identity", this.value);
                         }
-
                         (!!connectIdentity ? tag.hide : tag.show).apply(tag.find(".error_message"));
+                        tag.find(".identity_file").val("");
                         updateFields();
-                    };
-                    reader.onerror = ev => {
-                        tag.find(".error_message").text("Could not read identity file!").show();
+                    });
+                    tag.find(".identity_string").val(settings.global("connect_identity_teamspeak_identity", ""));
+                    tag.find(".identity_config_" + IdentitifyType[IdentitifyType.TEAMSPEAK]).on('shown', ev => {
+                        tag.find(".identity_string").trigger('change');
+                    });
+                }
+
+                {
+                    tag.find(".identity_config_" + IdentitifyType[IdentitifyType.TEAFORO]).on('shown', ev => {
+                        connectIdentity = forumIdentity;
                         updateFields();
-                    };
-                    reader.readAsText(this.files[0]);
-                });
+                    });
+                }
 
-                tag.find(".identity_string").on('change', function (this: HTMLInputElement) {
-                    if(this.value.length == 0){
-                        tag.find(".error_message").text("Please select an identity!");
-                        connectIdentity = undefined;
-                    } else {
-                        connectIdentity = TSIdentityHelper.loadIdentity(this.value);
-                        if(!connectIdentity) tag.find(".error_message").text("Could not parse identity! " + TSIdentityHelper.last_error());
-                        else settings.changeGlobal("connect_identity_teamspeak_identity", this.value);
-                    }
-                    (!!connectIdentity ? tag.hide : tag.show).apply(tag.find(".error_message"));
-                    tag.find(".identity_file").val("");
-                    updateFields();
-                });
-                tag.find(".identity_string").val(settings.global("connect_identity_teamspeak_identity", ""));
-                tag.find(".identity_config_" + IdentitifyType[IdentitifyType.TEAMSPEAK]).on('shown', ev => {  tag.find(".identity_string").trigger('change'); });
-
-                if(!forumIdentity)
-                    tag.find(".identity_config_" + IdentitifyType[IdentitifyType.TEAFORO]).html("You cant use your TeaSpeak forum account.<br>You're not connected!");
-                tag.find(".identity_config_" + IdentitifyType[IdentitifyType.TEAFORO]).on('shown', ev => { connectIdentity = forumIdentity; updateFields(); });
+                {
+                    tag.find(".identity_config_" + IdentitifyType[IdentitifyType.NICKNAME]).on('shown', ev => {
+                        connectIdentity = new NameIdentity(tag.find(".connect_nickname").val() as string);
+                        updateFields();
+                    });
+                    tag.find(".connect_nickname").on("keyup", () => {
+                        if(connectIdentity instanceof NameIdentity)
+                            connectIdentity.set_name(tag.find(".connect_nickname").val() as string);
+                    });
+                    if(!settings.static("localhost_debug", false))
+                        tag.find(".identity_select option[value=" + IdentitifyType[IdentitifyType.NICKNAME] + "]").remove();
+                }
 
                 //connect_address
                 return tag;
@@ -121,7 +147,12 @@ namespace Modals {
 
                     let field_address = tag.parents(".modal-content").find(".connect_address");
                     let address = field_address.val().toString();
-                    globalClient.startConnection(address, connectIdentity, tag.parents(".modal-content").find(".connect_nickname").val().toString());
+                    globalClient.startConnection(
+                        address,
+                        connectIdentity,
+                        tag.parents(".modal-content").find(".connect_nickname").val().toString(),
+                        {password: tag.parents(".modal-content").find(".connect_password").val().toString(), hashed: false}
+                    );
                 });
                 tag.append(button);
                 return tag;

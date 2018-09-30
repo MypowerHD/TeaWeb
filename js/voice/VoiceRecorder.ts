@@ -23,14 +23,26 @@ interface MediaStreamConstraints {
     groupId?: string;
 }
 
+if(!AudioBuffer.prototype.copyToChannel) { //Webkit does not implement this function
+    AudioBuffer.prototype.copyToChannel = function (source: Float32Array, channelNumber: number, startInChannel?: number) {
+        if(!startInChannel) startInChannel = 0;
+
+        let destination = this.getChannelData(channelNumber);
+        for(let index = 0; index < source.length; index++)
+            if(destination.length < index + startInChannel)
+                destination[index + startInChannel] = source[index];
+    }
+}
+
 class VoiceRecorder {
     private static readonly CHANNEL = 0;
     private static readonly CHANNELS = 1;
     private static readonly BUFFER_SIZE = 1024 * 4;
 
     handle: VoiceConnection;
-    on_data: (data: AudioBuffer, head: boolean) => void = (data) => {};
-    on_end: () => void = () => {};
+    on_data: (data: AudioBuffer, head: boolean) => void = undefined;
+    on_end: () => any;
+    on_start: () => any;
 
     private _recording: boolean = false;
 
@@ -38,8 +50,8 @@ class VoiceRecorder {
     private mediaStream: MediaStream = undefined;
 
     private audioContext: AudioContext;
-    private processor: any;
-    private mute: GainNode;
+    private processor: ScriptProcessorNode;
+    get_output_stream() : ScriptProcessorNode { return this.processor; }
 
     private vadHandler: VoiceActivityDetector;
     private _chunkCount: number = 0;
@@ -57,20 +69,29 @@ class VoiceRecorder {
             this.audioContext = AudioController.globalContext;
             this.processor = this.audioContext.createScriptProcessor(VoiceRecorder.BUFFER_SIZE, VoiceRecorder.CHANNELS, VoiceRecorder.CHANNELS);
 
+            const empty_buffer = this.audioContext.createBuffer(VoiceRecorder.CHANNELS, VoiceRecorder.BUFFER_SIZE, 48000);
             this.processor.addEventListener('audioprocess', ev => {
-                if(this.microphoneStream && this.vadHandler.shouldRecord(ev.inputBuffer))
-                    this.on_data(ev.inputBuffer, this._chunkCount++ == 0);
-                else {
-                    if(this._chunkCount != 0) this.on_end();
-                    this._chunkCount = 0
+                if(this.microphoneStream && this.vadHandler.shouldRecord(ev.inputBuffer)) {
+                    if(this._chunkCount == 0 && this.on_start)
+                        this.on_start();
+
+                    if(this.on_data)
+                        this.on_data(ev.inputBuffer, this._chunkCount == 0);
+                    else {
+                        for(let channel = 0; channel < ev.inputBuffer.numberOfChannels; channel++)
+                            ev.outputBuffer.copyToChannel(ev.inputBuffer.getChannelData(channel), channel);
+                    }
+                    this._chunkCount++;
+                } else {
+                    if(this._chunkCount != 0 && this.on_end)
+                        this.on_end();
+                    this._chunkCount = 0;
+
+                    for(let channel = 0; channel < ev.inputBuffer.numberOfChannels; channel++)
+                        ev.outputBuffer.copyToChannel(empty_buffer.getChannelData(channel), channel);
                 }
             });
             this.processor.connect(this.audioContext.destination);
-
-            //Not needed but make sure we have data for the preprocessor
-            this.mute = this.audioContext.createGain();
-            this.mute.gain.setValueAtTime(0, 0);
-            this.mute.connect(this.audioContext.destination);
 
             if(this.vadHandler)
                 this.vadHandler.initialise();
@@ -90,10 +111,6 @@ class VoiceRecorder {
 
     getMediaStream() : MediaStream {
         return this.mediaStream;
-    }
-
-    getDestinationContext() : AudioNode {
-        return this.mute;
     }
 
     getMicrophoneStream() : MediaStreamAudioSourceNode {

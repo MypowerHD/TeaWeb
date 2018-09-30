@@ -90,6 +90,15 @@ function main() {
 }
 
 app.loadedListener.push(() => {
-    main();
-    $(document).one('click', event => AudioController.initializeFromGesture());
+    try {
+        main();
+        if(!AudioController.initialized()) {
+            log.info(LogCategory.VOICE, "Initialize audio controller later!");
+            $(document).one('click', event => AudioController.initializeFromGesture());
+        }
+    } catch (ex) {
+        if(ex instanceof ReferenceError)
+            ex = ex.message + ":<br>" + ex.stack;
+        displayCriticalError("Failed to invoke main function:<br>" + ex, false);
+    }
 });

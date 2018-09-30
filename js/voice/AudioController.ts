@@ -6,6 +6,11 @@ enum PlayerState {
     STOPPED
 }
 
+interface Navigator {
+    mozGetUserMedia(constraints: MediaStreamConstraints, successCallback: NavigatorUserMediaSuccessCallback, errorCallback: NavigatorUserMediaErrorCallback): void;
+    webkitGetUserMedia(constraints: MediaStreamConstraints, successCallback: NavigatorUserMediaSuccessCallback, errorCallback: NavigatorUserMediaErrorCallback): void;
+}
+
 class AudioController {
     private static getUserMediaFunction() {
         if(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)
@@ -25,7 +30,7 @@ class AudioController {
         if(this._globalContext && this._globalContext.state != "suspended") return this._globalContext;
 
         if(!this._globalContext)
-            this._globalContext = new AudioContext();
+            this._globalContext = new (window.webkitAudioContext || window.AudioContext)();
         if(this._globalContext.state == "suspended") {
             if(!this._globalContextPromise) {
                 (this._globalContextPromise = this._globalContext.resume()).then(() => {
@@ -51,6 +56,10 @@ class AudioController {
             this._initialized_listener.pop_front()();
     }
 
+    static initialized() : boolean {
+        return this.globalContext.state === "running";
+    }
+
     static on_initialized(callback: () => any) {
         if(this.globalContext)
             callback();
@@ -63,6 +72,7 @@ class AudioController {
     }
 
     static initializeAudioController() {
+        AudioController.globalContext; //Just test here
         //this._globalReplayScheduler = setInterval(() => { AudioController.invokeNextReplay(); }, 20); //Fix me
     }
 
